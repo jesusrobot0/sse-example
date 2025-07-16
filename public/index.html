@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ETH Price Widget</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #f8f9fa;
+        color: #333;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 20px;
+      }
+      
+      .widget {
+        background: white;
+        border: 1px solid #e3f2fd;
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+      }
+      
+      .asset-info {
+        flex: 1;
+      }
+      
+      .asset-pair {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: #1a1a1a;
+        margin-bottom: 4px;
+        letter-spacing: 0.5px;
+      }
+      
+      .asset-name {
+        font-size: 1rem;
+        color: #888;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      
+      .price-section {
+        text-align: right;
+        margin-left: 100px;
+      }
+      
+      .current-price {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 8px;
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+      }
+      
+      .price-change {
+        background: #22c55e;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: inline-block;
+      }
+      
+      .last-update {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 0.75rem;
+        color: #999;
+        margin-top: 16px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 6px;
+      }
+      
+      .update-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+      
+      .update-indicator.show {
+        opacity: 1;
+      }
+      
+      .update-dot {
+        width: 6px;
+        height: 6px;
+        background: #22c55e;
+        border-radius: 50%;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      
+      .update-text {
+        font-size: 0.75rem;
+        color: #22c55e;
+        font-weight: 500;
+      }
+      
+      @keyframes pulse {
+        0%, 100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(1.2);
+        }
+      }
+      
+      .loading {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+      }
+      
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #eee;
+        border-top: 2px solid #22c55e;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 8px;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .negative {
+        color: #ef4444 !important;
+      }
+      
+      .negative .price-change {
+        background: #ef4444;
+      }
+      
+      .negative .update-dot {
+        background: #ef4444;
+      }
+      
+      .negative .update-text {
+        color: #ef4444;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="widget">
+      <div id="priceWidget" class="loading">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+      </div>
+    </div>
+
+    <script>
+      const priceWidget = document.getElementById("priceWidget");
+
+      function formatCurrency(amount, currency = 'USD') {
+        if (amount === null || amount === undefined) return 'N/A';
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency,
+          minimumFractionDigits: 2
+        }).format(amount);
+      }
+
+      function formatNumber(num) {
+        if (num === null || num === undefined) return 'N/A';
+        return new Intl.NumberFormat('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(num);
+      }
+
+      function formatDateTime(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleString('es-ES', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      }
+
+      function showUpdateIndicator(isPositive) {
+        const updateIndicator = document.querySelector('.update-indicator');
+        if (updateIndicator) {
+          updateIndicator.classList.add('show');
+          
+          // Ocultar después de 2 segundos
+          setTimeout(() => {
+            updateIndicator.classList.remove('show');
+          }, 2000);
+        }
+      }
+
+      function updatePriceWidget(eventData) {
+        if (eventData.type === 'ethereum_price' && eventData.data) {
+          const data = eventData.data;
+          const isPositive = data.change_24h >= 0;
+          const changeSymbol = isPositive ? '+' : '';
+          
+          priceWidget.innerHTML = `
+            <div class="header">
+              <div class="asset-info">
+                <div class="asset-pair">ETH/USD</div>
+                <div class="asset-name">Ethereum</div>
+              </div>
+              
+              <div class="price-section">
+                <div class="current-price">${formatCurrency(data.usd, 'USD').replace('$', '')}</div>
+                <div class="price-change">${changeSymbol}${formatNumber(data.change_24h)}%</div>
+              </div>
+            </div>
+            
+            <div class="last-update">
+              <span>Última actualización: ${formatDateTime(eventData.timestamp)}</span>
+              <div class="update-indicator">
+                <div class="update-dot"></div>
+                <span class="update-text">Precio actualizado</span>
+              </div>
+            </div>
+          `;
+          
+          // Aplicar clase para colores negativos si es necesario
+          if (!isPositive) {
+            priceWidget.classList.add('negative');
+          } else {
+            priceWidget.classList.remove('negative');
+          }
+          
+          // Mostrar indicador de actualización
+          showUpdateIndicator(isPositive);
+          
+        } else if (eventData.type === 'error') {
+          priceWidget.innerHTML = `
+            <div class="header">
+              <div class="asset-info">
+                <div class="asset-pair">ETH/USD</div>
+                <div class="asset-name">Error de conexión</div>
+              </div>
+              
+              <div class="price-section">
+                <div class="current-price" style="color: #dc2626;">--</div>
+                <div class="price-change" style="background: #dc2626;">Error</div>
+              </div>
+            </div>
+            
+            <div class="last-update">
+              Error: ${eventData.error}
+            </div>
+          `;
+        }
+      }
+
+      if (typeof EventSource !== "undefined") {
+        const eventSource = new EventSource("/events");
+
+        eventSource.onopen = function (event) {
+          console.log("Conectado al servidor");
+        };
+
+        eventSource.onmessage = function (event) {
+          const eventData = JSON.parse(event.data);
+          updatePriceWidget(eventData);
+        };
+
+        eventSource.onerror = function (event) {
+          console.log("Error de conexión");
+        };
+      } else {
+        console.log("SSE no soportado");
+      }
+    </script>
+  </body>
+</html>
